@@ -44,7 +44,6 @@ func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[st
 		lastTokenCheck: time.Now(),
 	}
 
-	// Absoluter Timer: Startet einmalig bei Verbindung und wird NICHT zurückgesetzt
 	c.mu.Lock()
 	c.timer = time.AfterFunc(timeoutDur, func() {
 		c.Log("[TIMEOUT] Maximum connection duration reached. Closing connection.")
@@ -85,6 +84,9 @@ func (c *Client) Send(data []byte, binary bool) {
 	if c.socket == nil {
 		return
 	}
+	
+	_ = c.socket.SetWriteDeadline(time.Now().Add(10 * time.Second))
+
 	msgType := websocket.TextMessage
 	if binary {
 		msgType = websocket.BinaryMessage
