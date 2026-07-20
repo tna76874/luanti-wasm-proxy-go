@@ -11,4 +11,4 @@ services:
 #    cap_add:
 #      - NET_ADMIN
     environment:
-      - TZ=UTC
+      - TZ=Europe/Berlin
