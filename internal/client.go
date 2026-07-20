@@ -20,15 +20,21 @@ type Client struct {
 	lastCount      int
 	tokens         float64
 	lastTokenCheck time.Time
+	timer          *time.Timer
 }
 
 const (
-	maxBurst   = 5000.0 // Massives Guthaben für sehr große Joins und Mod-Pakete
-	refillRate = 2000.0 // Sehr hoher dauerhafter Durchsatz
+	maxBurst   = 5000.0
+	refillRate = 2000.0
 )
 
 func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[string][]string) *Client {
 	socket.SetReadLimit(65536)
+
+	timeoutDur, err := time.ParseDuration(GlobalConfig.ConnectionTimeout)
+	if err != nil {
+		timeoutDur = 1 * time.Hour
+	}
 
 	c := &Client{
 		id:             id,
@@ -37,13 +43,21 @@ func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[st
 		tokens:         maxBurst,
 		lastTokenCheck: time.Now(),
 	}
+
+	// Absoluter Timer: Startet einmalig bei Verbindung und wird NICHT zurückgesetzt
+	c.mu.Lock()
+	c.timer = time.AfterFunc(timeoutDur, func() {
+		c.Log("[TIMEOUT] Maximum connection duration reached. Closing connection.")
+		c.Close()
+	})
+	c.mu.Unlock()
 	
 	originSource := remoteAddr
 	if len(c.ipChain) > 0 {
 		originSource = strings.Join(c.ipChain, " -> ")
 	}
 	log.Printf("[CLIENT %d] Connected successfully. Origin chain / Source: [%s]", c.id, originSource)
-	c.Log(fmt.Sprintf("Initialized client session from origin: %v", c.ipChain))
+	c.Log(fmt.Sprintf("Initialized client session from origin: %v (Absolute max duration: %v)", c.ipChain, timeoutDur))
 
 	go c.readPump()
 	return c
@@ -81,6 +95,10 @@ func (c *Client) Send(data []byte, binary bool) {
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
 	if c.socket != nil {
 		c.socket.Close()
 		c.socket = nil

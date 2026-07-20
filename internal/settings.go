@@ -28,13 +28,14 @@ type ScheduleRule struct {
 }
 
 type Config struct {
-	Port             int            `yaml:"port"`
-	AllowedSources   []string       `yaml:"allowed_sources"`
-	AllowedOrigins   []string       `yaml:"allowed_origins"`
-	ForceSSL         bool           `yaml:"force_ssl"`
-	EnableVPN        bool           `yaml:"enable_vpn"`
-	AllowedSchedules []ScheduleRule `yaml:"allowed_schedules"`
-	DirectProxies    []ProxyRule    `yaml:"direct_proxies"`
+	Port              int            `yaml:"port"`
+	AllowedSources    []string       `yaml:"allowed_sources"`
+	AllowedOrigins    []string       `yaml:"allowed_origins"`
+	ForceSSL          bool           `yaml:"force_ssl"`
+	EnableVPN         bool           `yaml:"enable_vpn"`
+	ConnectionTimeout string         `yaml:"connection_timeout"`
+	AllowedSchedules  []ScheduleRule `yaml:"allowed_schedules"`
+	DirectProxies     []ProxyRule    `yaml:"direct_proxies"`
 }
 
 var (
@@ -69,10 +70,11 @@ func LoadConfig(path string) {
 	if err != nil {
 		LogToFile("Warning: Could not read %s, using defaults: %v", path, err)
 		GlobalConfig = Config{
-			Port:           8080,
-			AllowedSources: []string{"0.0.0.0/0"},
-			ForceSSL:       false,
-			EnableVPN:      false,
+			Port:              8080,
+			AllowedSources:    []string{"0.0.0.0/0"},
+			ForceSSL:          false,
+			EnableVPN:         false,
+			ConnectionTimeout: "1h",
 			DirectProxies: []ProxyRule{
 				{VirtualIP: "188.40.133.58", RealIP: "188.40.133.58", PortRegex: "^(3[0-9]{4}|40000)$"},
 				{VirtualIP: "127.0.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},
@@ -82,6 +84,9 @@ func LoadConfig(path string) {
 		err = yaml.Unmarshal(file, &GlobalConfig)
 		if err != nil {
 			log.Fatalf("Failed to parse config.yml: %v", err)
+		}
+		if GlobalConfig.ConnectionTimeout == "" {
+			GlobalConfig.ConnectionTimeout = "1h"
 		}
 	}
 

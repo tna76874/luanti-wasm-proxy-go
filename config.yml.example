@@ -2,6 +2,7 @@ port: 8080
 
 force_ssl: false
 enable_vpn: false
+connection_timeout: "1h"
 
 allowed_sources:
   - "0.0.0.0/0"
