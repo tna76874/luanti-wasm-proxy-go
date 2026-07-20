@@ -19,16 +19,19 @@ var (
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		allowed := internal.GlobalConfig.AllowedOrigins
+		origin := r.Header.Get("Origin")
+
 		if len(allowed) == 0 {
 			return true
 		}
 
-		origin := r.Header.Get("Origin")
 		for _, allowedOrigin := range allowed {
 			if allowedOrigin == "*" || origin == allowedOrigin {
 				return true
 			}
 		}
+		
+		internal.LogToFile("[BLOCKED] Access denied for %s: Origin '%s' not allowed", r.RemoteAddr, origin)
 		return false
 	},
 }
@@ -50,6 +53,8 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := r.RemoteAddr
+		origin := r.Header.Get("Origin")
+		internal.LogToFile("[CONNECT] Incoming connection attempt from %s with Origin: '%s'", remoteAddr, origin)
 
 		if internal.GlobalConfig.ForceSSL {
 			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
