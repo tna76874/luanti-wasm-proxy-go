@@ -30,16 +30,24 @@ func InetNtop(b []byte) string {
 
 func ExtractIPChain(rHeaders map[string][]string, remoteAddr string) []string {
 	var chain []string
+	
 	if xff, ok := rHeaders["X-Forwarded-For"]; ok && len(xff) > 0 {
 		for _, entry := range strings.Split(xff[0], ",") {
-			chain = append(chain, Sanitize(strings.TrimSpace(entry)))
+			cleaned := Sanitize(strings.TrimSpace(entry))
+			if net.ParseIP(cleaned) != nil {
+				chain = append(chain, cleaned)
+			}
 		}
 	}
+	
 	host, _, _ := net.SplitHostPort(remoteAddr)
 	if host == "" {
 		host = remoteAddr
 	}
-	chain = append(chain, host)
+	if host != "" {
+		chain = append(chain, host)
+	}
+	
 	return chain
 }
 
