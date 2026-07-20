@@ -92,9 +92,20 @@ func (cp *ConnectProxy) Forward(data []byte, isBinary bool) {
 			List:     listEntries,
 		}
 
-		payloadBytes, _ := json.Marshal(payloadObj)
-		payloadStr := string(payloadBytes)
-		response = fmt.Sprintf(listResponseTpl, nowStr, len(payloadStr)+1, nowStr, payloadStr)
+		payloadBytes, err := json.Marshal(payloadObj)
+		if err != nil {
+			cp.client.Log("Failed to marshal server list: " + err.Error())
+			cp.Close()
+			return
+		}
+		
+		response = fmt.Sprintf(
+			listResponseTpl,
+			nowStr,
+			len(payloadBytes),
+			nowStr,
+			string(payloadBytes),
+		)
 		cp.client.Log("Sending virtual server list")
 	} else {
 		cp.client.Log(fmt.Sprintf("Invalid GET request for %s", url))
