@@ -5,25 +5,32 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 type Client struct {
-	id        int
-	socket    *websocket.Conn
-	ipChain   []string
-	target    Target
-	mu        sync.Mutex
-	lastLog   string
-	lastCount int
+	id          int
+	socket      *websocket.Conn
+	ipChain     []string
+	target      Target
+	mu          sync.Mutex
+	lastLog     string
+	lastCount   int
+	msgCount    int
+	windowStart time.Time
 }
 
 func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[string][]string) *Client {
+	// 1. Payload-Limit auf 64 KB setzen (Schutz vor großen Spam-Paketen)
+	socket.SetReadLimit(65536)
+
 	c := &Client{
-		id:      id,
-		socket:  socket,
-		ipChain: ExtractIPChain(headers, remoteAddr),
+		id:          id,
+		socket:      socket,
+		ipChain:     ExtractIPChain(headers, remoteAddr),
+		windowStart: time.Now(),
 	}
 	
 	originSource := remoteAddr
@@ -45,7 +52,7 @@ func (c *Client) Log(args ...interface{}) {
 		if c.lastCount > 0 {
 			log.Printf("%s [repeated %d times]", c.lastLog, c.lastCount)
 		}
-		log.Println(line)
+		LogToFile(line)
 		c.lastLog = line
 		c.lastCount = 0
 	} else {
@@ -86,6 +93,24 @@ func (c *Client) readPump() {
 		if err != nil {
 			break
 		}
+
+		// 2. Message-Rate-Limiting (Spam-Schutz pro Client-Verbindung)
+		// Erlaubt maximal 50 Nachrichten pro Sekunde, bei Überschreitung wird die Verbindung getrennt
+		c.mu.Lock()
+		now := time.Now()
+		if now.Sub(c.windowStart) > time.Second {
+			c.windowStart = now
+			c.msgCount = 0
+		}
+		c.msgCount++
+		exceeded := c.msgCount > 50
+		c.mu.Unlock()
+
+		if exceeded {
+			c.Log("[BLOCKED] Client exceeded message rate limit (Spam detected). Closing connection.")
+			return
+		}
+
 		isBinary := (messageType == websocket.BinaryMessage)
 
 		if c.target != nil {
