@@ -39,7 +39,6 @@ func main() {
 
 	internal.LoadConfig(*configPath)
 
-	// VPN-Zustand beim Start loggen
 	vpnStatus := "DISABLED"
 	if internal.GlobalConfig.EnableVPN {
 		vpnStatus = "ENABLED"
@@ -73,7 +72,6 @@ func main() {
 			return
 		}
 
-		// Maximale Anzahl gleichzeitiger Clients prüfen
 		maxAllowed := internal.GlobalConfig.MaxClients
 		if maxAllowed <= 0 {
 			maxAllowed = 100
@@ -93,20 +91,12 @@ func main() {
 
 		atomic.AddInt64(&activeClients, 1)
 
-		// Client-Zähler beim Schließen der Verbindung automatisch dekrementieren
-		// (Wir wickeln die Schließung über ein Wrapper-Objekt ab oder rufen Cleanup bei Trennung auf)
 		id := int(atomic.AddInt32(&connId, 1))
 		headers := make(map[string][]string)
 		for k, v := range r.Header {
 			headers[k] = v
 		}
 
-		// Da NewClient intern blockiert/läuft, nutzen wir eine Go-Routine bzw. hängen das Defer an den Lebenszyklus. 
-		// Um es sauber im main.go zu halten: Wir leiten das Herunterzählen direkt beim Schließen ein, 
-		// indem wir die Verbindung überwachen oder über die internen Lifecycle-Hooks gehen.
-		// Am saubersten ist es, wenn wir activeClients beim Beenden von NewClient decrementieren.
-		// Da NewClient aber asynchron läuft, korrigieren wir das hier direkt über eine angepasste Methode:
-		
 		go func() {
 			defer atomic.AddInt64(&activeClients, -1)
 			internal.NewClient(id, socket, remoteAddr, headers)
