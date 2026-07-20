@@ -12,6 +12,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var (
+	activeClients int64
+)
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		allowed := internal.GlobalConfig.AllowedOrigins
@@ -41,6 +45,7 @@ func main() {
 		vpnStatus = "ENABLED"
 	}
 	internal.LogToFile("[STARTUP] VPN functionality is currently: %s", vpnStatus)
+	internal.LogToFile("[STARTUP] Max clients limit configured to: %d", internal.GlobalConfig.MaxClients)
 
 	var connId int32
 
@@ -68,19 +73,44 @@ func main() {
 			return
 		}
 
+		// Maximale Anzahl gleichzeitiger Clients prüfen
+		maxAllowed := internal.GlobalConfig.MaxClients
+		if maxAllowed <= 0 {
+			maxAllowed = 100
+		}
+
+		if atomic.LoadInt64(&activeClients) >= int64(maxAllowed) {
+			internal.LogToFile("[BLOCKED] Connection rejected for %s: Max clients limit (%d) reached.", remoteAddr, maxAllowed)
+			http.Error(w, "Service Unavailable (Max clients reached)", http.StatusServiceUnavailable)
+			return
+		}
+
 		socket, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("Upgrade error (Origin check failed or invalid handshake): %v", err)
 			return
 		}
 
+		atomic.AddInt64(&activeClients, 1)
+
+		// Client-Zähler beim Schließen der Verbindung automatisch dekrementieren
+		// (Wir wickeln die Schließung über ein Wrapper-Objekt ab oder rufen Cleanup bei Trennung auf)
 		id := int(atomic.AddInt32(&connId, 1))
 		headers := make(map[string][]string)
 		for k, v := range r.Header {
 			headers[k] = v
 		}
 
-		internal.NewClient(id, socket, remoteAddr, headers)
+		// Da NewClient intern blockiert/läuft, nutzen wir eine Go-Routine bzw. hängen das Defer an den Lebenszyklus. 
+		// Um es sauber im main.go zu halten: Wir leiten das Herunterzählen direkt beim Schließen ein, 
+		// indem wir die Verbindung überwachen oder über die internen Lifecycle-Hooks gehen.
+		// Am saubersten ist es, wenn wir activeClients beim Beenden von NewClient decrementieren.
+		// Da NewClient aber asynchron läuft, korrigieren wir das hier direkt über eine angepasste Methode:
+		
+		go func() {
+			defer atomic.AddInt64(&activeClients, -1)
+			internal.NewClient(id, socket, remoteAddr, headers)
+		}()
 	})
 
 	addr := fmt.Sprintf(":%d", internal.GlobalConfig.Port)

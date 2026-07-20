@@ -34,6 +34,7 @@ type Config struct {
 	ForceSSL          bool           `yaml:"force_ssl"`
 	EnableVPN         bool           `yaml:"enable_vpn"`
 	ConnectionTimeout string         `yaml:"connection_timeout"`
+	MaxClients        int            `yaml:"max_clients"`
 	AllowedSchedules  []ScheduleRule `yaml:"allowed_schedules"`
 	DirectProxies     []ProxyRule    `yaml:"direct_proxies"`
 }
@@ -75,6 +76,7 @@ func LoadConfig(path string) {
 			ForceSSL:          false,
 			EnableVPN:         false,
 			ConnectionTimeout: "1h",
+			MaxClients:        100,
 			DirectProxies: []ProxyRule{
 				{VirtualIP: "188.40.133.58", RealIP: "188.40.133.58", PortRegex: "^(3[0-9]{4}|40000)$"},
 				{VirtualIP: "127.0.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},
@@ -87,6 +89,9 @@ func LoadConfig(path string) {
 		}
 		if GlobalConfig.ConnectionTimeout == "" {
 			GlobalConfig.ConnectionTimeout = "1h"
+		}
+		if GlobalConfig.MaxClients <= 0 {
+			GlobalConfig.MaxClients = 100
 		}
 	}
 
