@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"time"
 )
 
 func randVpnCode() string {
@@ -20,20 +21,50 @@ var (
 )
 
 type VPN struct {
-	ServerCode string
-	ClientCode string
-	Targets    map[string]*VPNTarget
-	mu         sync.Mutex
+	ServerCode   string
+	ClientCode   string
+	Targets      map[string]*VPNTarget
+	mu           sync.Mutex
+	lastActivity time.Time
+}
+
+func init() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		for range ticker.C {
+			vpnMutex.Lock()
+			now := time.Now()
+			seen := make(map[*VPN]bool)
+			for _, v := range vpnMap {
+				if seen[v] {
+					continue
+				}
+				seen[v] = true
+
+				v.mu.Lock()
+				inactive := now.Sub(v.lastActivity) > 2*time.Hour
+				v.mu.Unlock()
+
+				if inactive {
+					delete(vpnMap, v.ServerCode)
+					delete(vpnMap, v.ClientCode)
+				}
+			}
+			vpnMutex.Unlock()
+		}
+	}()
 }
 
 func VpnMake(game string) (string, string) {
 	vpnMutex.Lock()
 	defer vpnMutex.Unlock()
 
+	now := time.Now()
 	v := &VPN{
-		ServerCode: randVpnCode(),
-		ClientCode: randVpnCode(),
-		Targets:    make(map[string]*VPNTarget),
+		ServerCode:   randVpnCode(),
+		ClientCode:   randVpnCode(),
+		Targets:      make(map[string]*VPNTarget),
+		lastActivity: now,
 	}
 	vpnMap[v.ServerCode] = v
 	vpnMap[v.ClientCode] = v
@@ -43,6 +74,11 @@ func VpnMake(game string) (string, string) {
 func VpnConnect(client *Client, code string, bindPort int) Target {
 	vpnMutex.Lock()
 	v, exists := vpnMap[code]
+	if exists {
+		v.mu.Lock()
+		v.lastActivity = time.Now()
+		v.mu.Unlock()
+	}
 	vpnMutex.Unlock()
 
 	if !exists {
@@ -84,6 +120,7 @@ func NewVPNTarget(v *VPN, client *Client, code string, bindPort int) *VPNTarget 
 
 	v.mu.Lock()
 	v.Targets[addr] = vt
+	v.lastActivity = time.Now()
 	v.mu.Unlock()
 
 	client.Log(fmt.Sprintf("VPN connect to %s", addr))
@@ -109,6 +146,7 @@ func (vt *VPNTarget) Forward(data []byte, isBinary bool) {
 	}
 
 	vt.vpn.mu.Lock()
+	vt.vpn.lastActivity = time.Now()
 	remote, exists := vt.vpn.Targets[fmt.Sprintf("%s:%d", destIP, destPort)]
 	vt.vpn.mu.Unlock()
 
@@ -129,6 +167,20 @@ func (vt *VPNTarget) Forward(data []byte, isBinary bool) {
 func (vt *VPNTarget) Close() {
 	vt.vpn.mu.Lock()
 	delete(vt.vpn.Targets, vt.addr)
+	isEmpty := len(vt.vpn.Targets) == 0
 	vt.vpn.mu.Unlock()
+
+	if isEmpty {
+		vpnMutex.Lock()
+		vt.vpn.mu.Lock()
+		// Double-Check unter globalem Lock, ob währenddessen wieder Targets dazugekommen sind
+		if len(vt.vpn.Targets) == 0 {
+			delete(vpnMap, vt.vpn.ServerCode)
+			delete(vpnMap, vt.vpn.ClientCode)
+		}
+		vt.vpn.mu.Unlock()
+		vpnMutex.Unlock()
+	}
+
 	vt.client.Close()
 }

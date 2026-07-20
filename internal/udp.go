@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"net"
+	"sync"
 )
 
 type Target interface {
@@ -17,6 +18,7 @@ type UDPProxy struct {
 	realPort  int
 	sendOk    bool
 	sendQueue [][]byte
+	mu        sync.Mutex
 }
 
 func NewUDPProxy(client *Client, ip string, port int) *UDPProxy {
@@ -50,10 +52,14 @@ func (u *UDPProxy) Forward(data []byte, isBinary bool) {
 		return
 	}
 
-	if u.sendOk {
+	u.mu.Lock()
+	send := u.sendOk
+	if send {
+		u.mu.Unlock()
 		_, _ = u.conn.Write(data)
 	} else {
 		u.sendQueue = append(u.sendQueue, data)
+		u.mu.Unlock()
 	}
 }
 
