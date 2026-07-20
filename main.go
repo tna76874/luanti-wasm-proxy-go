@@ -14,7 +14,6 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// Wenn keine Allowed Origins konfiguriert sind, Check überspringen (True)
 		allowed := internal.GlobalConfig.AllowedOrigins
 		if len(allowed) == 0 {
 			return true
@@ -36,12 +35,18 @@ func main() {
 
 	internal.LoadConfig(*configPath)
 
+	// VPN-Zustand beim Start loggen
+	vpnStatus := "DISABLED"
+	if internal.GlobalConfig.EnableVPN {
+		vpnStatus = "ENABLED"
+	}
+	internal.LogToFile("[STARTUP] VPN functionality is currently: %s", vpnStatus)
+
 	var connId int32
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := r.RemoteAddr
 
-		// SSL erzwingen Prüfung (unterstützt direktes HTTPS oder X-Forwarded-Proto vom Reverse Proxy)
 		if internal.GlobalConfig.ForceSSL {
 			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 			if !isSecure {

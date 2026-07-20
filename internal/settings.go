@@ -32,6 +32,7 @@ type Config struct {
 	AllowedSources   []string       `yaml:"allowed_sources"`
 	AllowedOrigins   []string       `yaml:"allowed_origins"`
 	ForceSSL         bool           `yaml:"force_ssl"`
+	EnableVPN        bool           `yaml:"enable_vpn"`
 	AllowedSchedules []ScheduleRule `yaml:"allowed_schedules"`
 	DirectProxies    []ProxyRule    `yaml:"direct_proxies"`
 }
@@ -71,6 +72,7 @@ func LoadConfig(path string) {
 			Port:           8080,
 			AllowedSources: []string{"0.0.0.0/0"},
 			ForceSSL:       false,
+			EnableVPN:      false,
 			DirectProxies: []ProxyRule{
 				{VirtualIP: "188.40.133.58", RealIP: "188.40.133.58", PortRegex: "^(3[0-9]{4}|40000)$"},
 				{VirtualIP: "127.0.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},

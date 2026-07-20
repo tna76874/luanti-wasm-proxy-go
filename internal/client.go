@@ -11,26 +11,31 @@ import (
 )
 
 type Client struct {
-	id          int
-	socket      *websocket.Conn
-	ipChain     []string
-	target      Target
-	mu          sync.Mutex
-	lastLog     string
-	lastCount   int
-	msgCount    int
-	windowStart time.Time
+	id             int
+	socket         *websocket.Conn
+	ipChain        []string
+	target         Target
+	mu             sync.Mutex
+	lastLog        string
+	lastCount      int
+	tokens         float64
+	lastTokenCheck time.Time
 }
 
+const (
+	maxBurst   = 5000.0 // Massives Guthaben für sehr große Joins und Mod-Pakete
+	refillRate = 2000.0 // Sehr hoher dauerhafter Durchsatz
+)
+
 func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[string][]string) *Client {
-	// 1. Payload-Limit auf 64 KB setzen (Schutz vor großen Spam-Paketen)
 	socket.SetReadLimit(65536)
 
 	c := &Client{
-		id:          id,
-		socket:      socket,
-		ipChain:     ExtractIPChain(headers, remoteAddr),
-		windowStart: time.Now(),
+		id:             id,
+		socket:         socket,
+		ipChain:        ExtractIPChain(headers, remoteAddr),
+		tokens:         maxBurst,
+		lastTokenCheck: time.Now(),
 	}
 	
 	originSource := remoteAddr
@@ -94,20 +99,26 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// 2. Message-Rate-Limiting (Spam-Schutz pro Client-Verbindung)
-		// Erlaubt maximal 50 Nachrichten pro Sekunde, bei Überschreitung wird die Verbindung getrennt
 		c.mu.Lock()
 		now := time.Now()
-		if now.Sub(c.windowStart) > time.Second {
-			c.windowStart = now
-			c.msgCount = 0
+		elapsed := now.Sub(c.lastTokenCheck).Seconds()
+		c.lastTokenCheck = now
+
+		c.tokens += elapsed * refillRate
+		if c.tokens > maxBurst {
+			c.tokens = maxBurst
 		}
-		c.msgCount++
-		exceeded := c.msgCount > 50
+
+		exceeded := false
+		if c.tokens < 1.0 {
+			exceeded = true
+		} else {
+			c.tokens -= 1.0
+		}
 		c.mu.Unlock()
 
 		if exceeded {
-			c.Log("[BLOCKED] Client exceeded message rate limit (Spam detected). Closing connection.")
+			c.Log("[BLOCKED] Client exceeded message rate limit / burst quota (Spam detected). Closing connection.")
 			return
 		}
 
@@ -132,6 +143,11 @@ func (c *Client) handleCommand(data string) {
 
 	switch command {
 	case "MAKEVPN":
+		if !GlobalConfig.EnableVPN {
+			c.Log("[BLOCKED] MAKEVPN requested but VPN is disabled in config.")
+			c.Close()
+			return
+		}
 		if len(tokens) < 2 {
 			return
 		}
@@ -140,6 +156,11 @@ func (c *Client) handleCommand(data string) {
 		response = fmt.Sprintf("NEWVPN %s %s", sCode, cCode)
 
 	case "VPN":
+		if !GlobalConfig.EnableVPN {
+			c.Log("[BLOCKED] VPN requested but VPN is disabled in config.")
+			c.Close()
+			return
+		}
 		if len(tokens) < 6 {
 			return
 		}

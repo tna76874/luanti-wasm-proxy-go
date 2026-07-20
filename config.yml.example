@@ -1,6 +1,7 @@
 port: 8080
 
 force_ssl: false
+enable_vpn: false
 
 allowed_sources:
   - "0.0.0.0/0"
