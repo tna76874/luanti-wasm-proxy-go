@@ -9,7 +9,6 @@ RUN apk add --no-cache iptables
 
 WORKDIR /app
 COPY --from=builder /app/proxy /app/proxy
-COPY config.yml /app/config.yml
 COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
