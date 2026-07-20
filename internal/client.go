@@ -21,11 +21,15 @@ type Client struct {
 	tokens         float64
 	lastTokenCheck time.Time
 	timer          *time.Timer
+	pingTicker     *time.Ticker
+	stopPing       chan struct{}
 }
 
 const (
-	maxBurst   = 5000.0
-	refillRate = 2000.0
+	maxBurst       = 5000.0
+	refillRate     = 2000.0
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
 )
 
 func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[string][]string) *Client {
@@ -42,6 +46,7 @@ func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[st
 		ipChain:        ExtractIPChain(headers, remoteAddr),
 		tokens:         maxBurst,
 		lastTokenCheck: time.Now(),
+		stopPing:       make(chan struct{}),
 	}
 
 	c.mu.Lock()
@@ -58,8 +63,39 @@ func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[st
 	log.Printf("[CLIENT %d] Connected successfully. Origin chain / Source: [%s]", c.id, originSource)
 	c.Log(fmt.Sprintf("Initialized client session from origin: %v (Absolute max duration: %v)", c.ipChain, timeoutDur))
 
+	_ = c.socket.SetReadDeadline(time.Now().Add(pongWait))
+	c.socket.SetPongHandler(func(string) error {
+		_ = c.socket.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	go c.pingRoutine()
 	go c.readPump()
 	return c
+}
+
+func (c *Client) pingRoutine() {
+	c.pingTicker = time.NewTicker(pingPeriod)
+	defer c.pingTicker.Stop()
+
+	for {
+		select {
+		case <-c.pingTicker.C:
+			c.mu.Lock()
+			if c.socket == nil {
+				c.mu.Unlock()
+				return
+			}
+			_ = c.socket.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			err := c.socket.WriteMessage(websocket.PingMessage, nil)
+			c.mu.Unlock()
+			if err != nil {
+				return
+			}
+		case <-c.stopPing:
+			return
+		}
+	}
 }
 
 func (c *Client) Log(args ...interface{}) {
@@ -97,6 +133,13 @@ func (c *Client) Send(data []byte, binary bool) {
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	
+	select {
+	case <-c.stopPing:
+	default:
+		close(c.stopPing)
+	}
+
 	if c.timer != nil {
 		c.timer.Stop()
 		c.timer = nil
