@@ -1,7 +1,12 @@
 port: 8080
 
+force_ssl: false
+
 allowed_sources:
   - "0.0.0.0/0"
+
+allowed_origins:
+  - "https://deine-luanti-webseite.de"
 
 allowed_schedules:
   - days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]

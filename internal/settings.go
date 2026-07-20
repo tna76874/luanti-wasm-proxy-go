@@ -30,6 +30,8 @@ type ScheduleRule struct {
 type Config struct {
 	Port             int            `yaml:"port"`
 	AllowedSources   []string       `yaml:"allowed_sources"`
+	AllowedOrigins   []string       `yaml:"allowed_origins"`
+	ForceSSL         bool           `yaml:"force_ssl"`
 	AllowedSchedules []ScheduleRule `yaml:"allowed_schedules"`
 	DirectProxies    []ProxyRule    `yaml:"direct_proxies"`
 }
@@ -39,7 +41,6 @@ var (
 	logFileMu    sync.Mutex
 )
 
-// LogToFile schreibt formatierte Ereignisse sowohl in die Standardausgabe als auch in logs/proxy.log
 func LogToFile(format string, v ...interface{}) {
 	logFileMu.Lock()
 	defer logFileMu.Unlock()
@@ -47,16 +48,13 @@ func LogToFile(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
 	timestampedMsg := fmt.Sprintf("[%s] %s", time.Now().Format("2006-01-02 15:04:05"), msg)
 
-	// Auf Konsole ausgeben
 	log.Println(msg)
 
-	// Ordner "logs" automatisch erstellen, falls nicht vorhanden
 	logDir := "logs"
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return
 	}
 
-	// In Datei innerhalb des Ordners schreiben
 	logPath := filepath.Join(logDir, "proxy.log")
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err == nil {
@@ -72,6 +70,7 @@ func LoadConfig(path string) {
 		GlobalConfig = Config{
 			Port:           8080,
 			AllowedSources: []string{"0.0.0.0/0"},
+			ForceSSL:       false,
 			DirectProxies: []ProxyRule{
 				{VirtualIP: "188.40.133.58", RealIP: "188.40.133.58", PortRegex: "^(3[0-9]{4}|40000)$"},
 				{VirtualIP: "127.0.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},

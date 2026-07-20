@@ -13,7 +13,21 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		// Wenn keine Allowed Origins konfiguriert sind, Check überspringen (True)
+		allowed := internal.GlobalConfig.AllowedOrigins
+		if len(allowed) == 0 {
+			return true
+		}
+
+		origin := r.Header.Get("Origin")
+		for _, allowedOrigin := range allowed {
+			if allowedOrigin == "*" || origin == allowedOrigin {
+				return true
+			}
+		}
+		return false
+	},
 }
 
 func main() {
@@ -27,21 +41,31 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := r.RemoteAddr
 
+		// SSL erzwingen Prüfung (unterstützt direktes HTTPS oder X-Forwarded-Proto vom Reverse Proxy)
+		if internal.GlobalConfig.ForceSSL {
+			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+			if !isSecure {
+				internal.LogToFile("[BLOCKED] Access denied for %s (Insecure connection, HTTPS/SSL required)", remoteAddr)
+				http.Error(w, "Access Denied - SSL Required", http.StatusForbidden)
+				return
+			}
+		}
+
 		if !internal.CheckSourceAllowed(remoteAddr, internal.GlobalConfig.AllowedSources) {
-			log.Printf("Access denied for %s (Source IP not allowed)", remoteAddr)
+			internal.LogToFile("[BLOCKED] Access denied for %s (Source IP not allowed)", remoteAddr)
 			http.Error(w, "Access Denied", http.StatusForbidden)
 			return
 		}
 
 		if !internal.CheckTimeAllowed() {
-			log.Printf("Access denied for %s (Outside allowed day/time schedule)", remoteAddr)
+			internal.LogToFile("[BLOCKED] Access denied for %s (Outside allowed day/time schedule)", remoteAddr)
 			http.Error(w, "Access Denied - Outside Play Schedule", http.StatusForbidden)
 			return
 		}
 
 		socket, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Printf("Upgrade error: %v", err)
+			log.Printf("Upgrade error (Origin check failed or invalid handshake): %v", err)
 			return
 		}
 
