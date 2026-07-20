@@ -1,0 +1,17 @@
+port: 8080
+
+allowed_sources:
+  - "0.0.0.0/0"
+
+allowed_schedules:
+  - days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    start: "04:00"
+    end: "22:00"
+  - days: ["Saturday", "Sunday"]
+    start: "10:00"
+    end: "23:59"
+
+direct_proxies:
+  - virtual_ip: "192.168.0.1"
+    real_ip: "127.0.0.1"
+    port_regex: "^30000$"

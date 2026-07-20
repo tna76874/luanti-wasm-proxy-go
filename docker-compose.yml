@@ -1,0 +1,13 @@
+services:
+  luantiproxy:
+    build: .
+    container_name: luantiproxy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - TZ=UTC
