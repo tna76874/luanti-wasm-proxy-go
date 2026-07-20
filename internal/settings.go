@@ -41,7 +41,8 @@ func LoadConfig(path string) {
 			Port:           8080,
 			AllowedSources: []string{"0.0.0.0/0"},
 			DirectProxies: []ProxyRule{
-				{VirtualIP: "192.168.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},
+				{VirtualIP: "188.40.133.58", RealIP: "188.40.133.58", PortRegex: "^(3[0-9]{4}|40000)$"},
+				{VirtualIP: "127.0.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},
 			},
 		}
 	} else {
