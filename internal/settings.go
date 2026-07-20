@@ -10,14 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/natefinch/lumberjack.v2"
 	"gopkg.in/yaml.v3"
 )
 
 type ProxyRule struct {
-	VirtualIP  string         `yaml:"virtual_ip"`
-	RealIP     string         `yaml:"real_ip"`
-	RealDomain string         `yaml:"real_domain"`
-	PortRegex  string         `yaml:"port_regex"`
+	VirtualIP  string `yaml:"virtual_ip"`
+	RealIP     string `yaml:"real_ip"`
+	RealDomain string `yaml:"real_domain"`
+	PortRegex  string `yaml:"port_regex"`
 	compiled   *regexp.Regexp
 }
 
@@ -28,21 +29,35 @@ type ScheduleRule struct {
 }
 
 type Config struct {
-	Port              int            `yaml:"port"`
-	AllowedSources    []string       `yaml:"allowed_sources"`
-	AllowedOrigins    []string       `yaml:"allowed_origins"`
-	ForceSSL          bool           `yaml:"force_ssl"`
-	EnableVPN         bool           `yaml:"enable_vpn"`
-	ConnectionTimeout string         `yaml:"connection_timeout"`
-	MaxClients        int            `yaml:"max_clients"`
+	Port              int          `yaml:"port"`
+	AllowedSources    []string     `yaml:"allowed_sources"`
+	AllowedOrigins    []string     `yaml:"allowed_origins"`
+	ForceSSL          bool         `yaml:"force_ssl"`
+	EnableVPN         bool         `yaml:"enable_vpn"`
+	ConnectionTimeout string       `yaml:"connection_timeout"`
+	MaxClients        int          `yaml:"max_clients"`
 	AllowedSchedules  []ScheduleRule `yaml:"allowed_schedules"`
-	DirectProxies     []ProxyRule    `yaml:"direct_proxies"`
+	DirectProxies     []ProxyRule  `yaml:"direct_proxies"`
 }
 
 var (
 	GlobalConfig Config
 	logFileMu    sync.Mutex
+	logRotator   *lumberjack.Logger
 )
+
+func init() {
+	logDir := "logs"
+	_ = os.MkdirAll(logDir, 0755)
+
+	logRotator = &lumberjack.Logger{
+		Filename:   filepath.Join(logDir, "proxy.log"),
+		MaxSize:    10,   // Megabyte vor dem Rotieren
+		MaxBackups: 3,    // Max. 3 alte Log-Dateien aufheben
+		MaxAge:     28,   // Max. 28 Tage aufheben
+		Compress:   true, // Alte Logs als .gz komprimieren
+	}
+}
 
 func LogToFile(format string, v ...interface{}) {
 	logFileMu.Lock()
@@ -51,19 +66,11 @@ func LogToFile(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
 	timestampedMsg := fmt.Sprintf("[%s] %s", time.Now().Format("2006-01-02 15:04:05"), msg)
 
+	// Konsolenausgabe
 	log.Println(msg)
 
-	logDir := "logs"
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return
-	}
-
-	logPath := filepath.Join(logDir, "proxy.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		defer f.Close()
-		_, _ = f.WriteString(timestampedMsg + "\n")
-	}
+	// In das rotierende Logfile schreiben
+	_, _ = logRotator.Write([]byte(timestampedMsg + "\n"))
 }
 
 func LoadConfig(path string) {
