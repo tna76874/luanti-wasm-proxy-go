@@ -1,10 +1,13 @@
 package internal
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -25,18 +28,47 @@ type ScheduleRule struct {
 }
 
 type Config struct {
-	Port            int            `yaml:"port"`
-	AllowedSources  []string       `yaml:"allowed_sources"`
+	Port             int            `yaml:"port"`
+	AllowedSources   []string       `yaml:"allowed_sources"`
 	AllowedSchedules []ScheduleRule `yaml:"allowed_schedules"`
-	DirectProxies   []ProxyRule    `yaml:"direct_proxies"`
+	DirectProxies    []ProxyRule    `yaml:"direct_proxies"`
 }
 
-var GlobalConfig Config
+var (
+	GlobalConfig Config
+	logFileMu    sync.Mutex
+)
+
+// LogToFile schreibt formatierte Ereignisse sowohl in die Standardausgabe als auch in logs/proxy.log
+func LogToFile(format string, v ...interface{}) {
+	logFileMu.Lock()
+	defer logFileMu.Unlock()
+
+	msg := fmt.Sprintf(format, v...)
+	timestampedMsg := fmt.Sprintf("[%s] %s", time.Now().Format("2006-01-02 15:04:05"), msg)
+
+	// Auf Konsole ausgeben
+	log.Println(msg)
+
+	// Ordner "logs" automatisch erstellen, falls nicht vorhanden
+	logDir := "logs"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return
+	}
+
+	// In Datei innerhalb des Ordners schreiben
+	logPath := filepath.Join(logDir, "proxy.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		defer f.Close()
+		_, _ = f.WriteString(timestampedMsg + "\n")
+	}
+}
 
 func LoadConfig(path string) {
 	file, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("Warning: Could not read %s, using defaults: %v", path, err)
+		LogToFile("Warning: Could not read %s, using defaults: %v", path, err)
 		GlobalConfig = Config{
 			Port:           8080,
 			AllowedSources: []string{"0.0.0.0/0"},
@@ -102,7 +134,7 @@ func MatchProxy(vip string, port int) (string, int, bool) {
 			if rule.RealDomain != "" {
 				ips, err := net.LookupIP(rule.RealDomain)
 				if err != nil || len(ips) == 0 {
-					log.Printf("Failed to resolve domain %s: %v", rule.RealDomain, err)
+					LogToFile("Failed to resolve domain %s: %v", rule.RealDomain, err)
 					return "", 0, false
 				}
 				for _, ip := range ips {
@@ -115,9 +147,11 @@ func MatchProxy(vip string, port int) (string, int, bool) {
 					return "", 0, false
 				}
 			}
+			LogToFile("[ROUTING] Allowed connection from VirtualIP %s to RealIP %s on Port %d", vip, targetIP, port)
 			return targetIP, port, true
 		}
 	}
+	LogToFile("[BLOCKED] Proxy request rejected for VirtualIP %s on Port %d (No matching rule)", vip, port)
 	return "", 0, false
 }
 
