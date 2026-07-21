@@ -26,10 +26,8 @@ type Client struct {
 }
 
 const (
-	maxBurst       = 5000.0
-	refillRate     = 2000.0
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
+	pongWait   = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10
 )
 
 func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[string][]string) *Client {
@@ -44,7 +42,7 @@ func NewClient(id int, socket *websocket.Conn, remoteAddr string, headers map[st
 		id:             id,
 		socket:         socket,
 		ipChain:        ExtractIPChain(headers, remoteAddr),
-		tokens:         maxBurst,
+		tokens:         GlobalConfig.RateLimitBurst,
 		lastTokenCheck: time.Now(),
 		stopPing:       make(chan struct{}),
 	}
@@ -167,9 +165,9 @@ func (c *Client) readPump() {
 		elapsed := now.Sub(c.lastTokenCheck).Seconds()
 		c.lastTokenCheck = now
 
-		c.tokens += elapsed * refillRate
-		if c.tokens > maxBurst {
-			c.tokens = maxBurst
+		c.tokens += elapsed * GlobalConfig.RateLimitRefill
+		if c.tokens > GlobalConfig.RateLimitBurst {
+			c.tokens = GlobalConfig.RateLimitBurst
 		}
 
 		exceeded := false

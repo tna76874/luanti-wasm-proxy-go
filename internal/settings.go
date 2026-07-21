@@ -29,15 +29,17 @@ type ScheduleRule struct {
 }
 
 type Config struct {
-	Port              int          `yaml:"port"`
-	AllowedSources    []string     `yaml:"allowed_sources"`
-	AllowedOrigins    []string     `yaml:"allowed_origins"`
-	ForceSSL          bool         `yaml:"force_ssl"`
-	EnableVPN         bool         `yaml:"enable_vpn"`
-	ConnectionTimeout string       `yaml:"connection_timeout"`
-	MaxClients        int          `yaml:"max_clients"`
+	Port              int            `yaml:"port"`
+	AllowedSources    []string       `yaml:"allowed_sources"`
+	AllowedOrigins    []string       `yaml:"allowed_origins"`
+	ForceSSL          bool           `yaml:"force_ssl"`
+	EnableVPN         bool           `yaml:"enable_vpn"`
+	ConnectionTimeout string         `yaml:"connection_timeout"`
+	MaxClients        int            `yaml:"max_clients"`
+	RateLimitBurst    float64        `yaml:"rate_limit_burst"`
+	RateLimitRefill   float64        `yaml:"rate_limit_refill"`
 	AllowedSchedules  []ScheduleRule `yaml:"allowed_schedules"`
-	DirectProxies     []ProxyRule  `yaml:"direct_proxies"`
+	DirectProxies     []ProxyRule    `yaml:"direct_proxies"`
 }
 
 var (
@@ -84,6 +86,8 @@ func LoadConfig(path string) {
 			EnableVPN:         false,
 			ConnectionTimeout: "1h",
 			MaxClients:        100,
+			RateLimitBurst:    5000.0,
+			RateLimitRefill:   2000.0,
 			DirectProxies: []ProxyRule{
 				{VirtualIP: "188.40.133.58", RealIP: "188.40.133.58", PortRegex: "^(3[0-9]{4}|40000)$"},
 				{VirtualIP: "127.0.0.1", RealIP: "127.0.0.1", PortRegex: "^30000$"},
@@ -99,6 +103,12 @@ func LoadConfig(path string) {
 		}
 		if GlobalConfig.MaxClients <= 0 {
 			GlobalConfig.MaxClients = 100
+		}
+		if GlobalConfig.RateLimitBurst <= 0 {
+			GlobalConfig.RateLimitBurst = 5000.0
+		}
+		if GlobalConfig.RateLimitRefill <= 0 {
+			GlobalConfig.RateLimitRefill = 2000.0
 		}
 	}
 
